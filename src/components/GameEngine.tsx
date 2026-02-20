@@ -1,6 +1,6 @@
 import Matter from 'matter-js';
 import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
+import { Animated, StyleSheet, View } from 'react-native';
 import { useSensor } from '../hooks/useSensor';
 import {
     createRing,
@@ -12,7 +12,14 @@ import {
     updateGravity
 } from '../physics';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import {
+    SCREEN_HEIGHT,
+    SCREEN_WIDTH,
+    TANK_HEIGHT,
+    TANK_OFFSET_X,
+    TANK_OFFSET_Y,
+    TANK_WIDTH
+} from '../../constants/layout';
 
 interface GameEngineProps {
     isPlay: boolean;
@@ -45,7 +52,11 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
 
     // State for rendering positions
     const [ringPositions, setRingPositions] = useState<BodyState[]>([]);
-    const [pegPosition, setPegPosition] = useState<BodyState>({ x: SCREEN_WIDTH / 2, y: SCREEN_HEIGHT / 2 + 50, angle: 0 });
+    const [pegPosition, setPegPosition] = useState<BodyState>({
+        x: TANK_OFFSET_X + TANK_WIDTH / 2,
+        y: TANK_OFFSET_Y + TANK_HEIGHT / 2 + 50,
+        angle: 0
+    });
     const [bubbles, setBubbles] = useState<Bubble[]>([]);
 
     const sensorData = useSensor();
@@ -89,20 +100,40 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
 
     // Initialize physics world once
     useEffect(() => {
-        const { engine } = initPhysics(SCREEN_WIDTH, SCREEN_HEIGHT);
+        const { engine } = initPhysics(
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            TANK_WIDTH,
+            TANK_HEIGHT,
+            TANK_OFFSET_X,
+            TANK_OFFSET_Y
+        );
         engineRef.current = engine;
 
+        // Spread rings at the bottom of the tank
         ringColors.forEach((color, index) => {
-            createRing(SCREEN_WIDTH / 2 + (index * 15 - 30), 100 - index * 60, color);
+            createRing(
+                TANK_OFFSET_X + TANK_WIDTH / 2 + (index * 20 - 40),
+                TANK_OFFSET_Y + TANK_HEIGHT - 50 - index * 10,
+                color
+            );
         });
 
         setRingPositions(rings.map(r => ({ x: r.position.x, y: r.position.y, angle: r.angle })));
+
+        // Setup global callback for physics events
+        // @ts-ignore
+        global.onRingSuccess = () => {
+            onSuccess();
+        };
 
         return () => {
             Matter.Engine.clear(engine);
             Matter.World.clear(engine.world, false);
             cancelAnimationFrame(renderFrameRef.current);
             rings.length = 0;
+            // @ts-ignore
+            global.onRingSuccess = null;
         };
     }, []);
 
@@ -150,14 +181,15 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
                 style={[
                     styles.peg,
                     {
-                        width: PEG_DIAMETER,
+                        width: PEG_DIAMETER + 4,
                         height: PEG_HEIGHT,
-                        left: pegPosition.x,
+                        left: pegPosition.x - 2,
                         top: pegPosition.y,
                         transform: [{ rotate: `${pegPosition.angle}rad` }],
                     },
                 ]}
             >
+                <View style={styles.pegCap} />
                 <View style={styles.pegHighlight} />
             </View>
 
@@ -178,7 +210,9 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
                             opacity: bubble.opacity,
                         }
                     ]}
-                />
+                >
+                    <View style={styles.bubbleDot} />
+                </Animated.View>
             ))}
 
             {/* Render Rings */}
@@ -202,7 +236,8 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
                             },
                         ]}
                     >
-                        <View style={styles.ringInner} />
+                        <View style={styles.ringInnerShadow} />
+                        <View style={styles.ringGlow} />
                         <View style={styles.ringHighlight} />
                     </View>
                 );
@@ -214,52 +249,84 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
 const styles = StyleSheet.create({
     container: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'transparent', // Background is handled in App.tsx
+        backgroundColor: 'transparent',
         overflow: 'hidden',
     },
     peg: {
         position: 'absolute',
-        backgroundColor: '#f1c40f', // Bright yellow for contrast
-        borderRadius: 5,
+        backgroundColor: '#FFD700', // Gold/Yellow
+        borderRadius: 4,
         borderWidth: 1,
-        borderColor: '#d4ac0d',
+        borderColor: 'rgba(0,0,0,0.2)',
+        shadowColor: '#000',
+        shadowOffset: { width: 2, height: 0 },
+        shadowOpacity: 0.3,
+        shadowRadius: 2,
+    },
+    pegCap: {
+        width: '100%',
+        height: 10,
+        backgroundColor: '#FFD700',
+        borderRadius: 5,
+        position: 'absolute',
+        top: -5,
     },
     pegHighlight: {
-        width: 2,
-        height: '100%',
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
+        width: 3,
+        height: '90%',
+        backgroundColor: 'rgba(255, 255, 255, 0.5)',
         position: 'absolute',
         left: 2,
+        top: '5%',
+        borderRadius: 2,
     },
     ring: {
         position: 'absolute',
-        borderWidth: 7, // Slightly thinner than before for better proportions
+        borderWidth: 8,
         backgroundColor: 'transparent',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 5,
-        elevation: 5,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.4,
+        shadowRadius: 4,
+        elevation: 6,
     },
-    ringInner: {
+    ringInnerShadow: {
         ...StyleSheet.absoluteFillObject,
         borderRadius: RING_OUTER_RADIUS,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.3)',
+        borderColor: 'rgba(0, 0, 0, 0.2)',
+    },
+    ringGlow: {
+        ...StyleSheet.absoluteFillObject,
+        borderRadius: RING_OUTER_RADIUS,
+        borderWidth: 2,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+        margin: -1,
     },
     ringHighlight: {
         position: 'absolute',
-        top: 4,
-        left: 4,
-        width: 10,
-        height: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.5)',
-        borderRadius: 5,
+        top: 6,
+        left: 6,
+        width: 12,
+        height: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        borderRadius: 6,
         transform: [{ rotate: '-45deg' }],
     },
     bubble: {
         position: 'absolute',
-        backgroundColor: 'rgba(255, 255, 255, 0.3)',
-        borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.6)',
+        backgroundColor: 'rgba(255, 255, 255, 0.25)',
+        borderWidth: 0.5,
+        borderColor: 'rgba(255, 255, 255, 0.5)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    bubbleDot: {
+        width: '30%',
+        height: '30%',
+        backgroundColor: 'rgba(255, 255, 255, 0.6)',
+        borderRadius: 10,
+        position: 'absolute',
+        top: '20%',
+        left: '20%',
     }
 });
