@@ -108,50 +108,53 @@ export const createRing = (x: number, y: number, color: string) => {
     const parts: Matter.Body[] = [];
     const partCount = 8;
     const radius = RING_OUTER_RADIUS;
-    const thickness = RING_THICKNESS;
+    const thickness = RING_THICKNESS - 2; // Slightly thinner for better clearance
 
-    // Create 8 rectangle parts in an octagon shape
+    // Use a unique negative group for each ring so its internal parts don't collide
+    const ringGroupId = Matter.Body.nextGroup(true);
+
+    // Add a tiny random offset to prevent perfect initial overlap
+    const offsetX = (Math.random() - 0.5) * 10;
+    const spawnX = x + offsetX;
+
     for (let i = 0; i < partCount; i++) {
         const angle = (Math.PI * 2 * i) / partCount;
-
-        // Categorize segments:
         const isTop = (i >= 5 && i <= 7);
 
         const filter = isTop
-            ? { category: CAT_RING_TOP, mask: 0xFFFFFFFF }
-            : { category: CAT_RING_OTHER, mask: 0xFFFFFFFF & ~CAT_PEG };
+            ? { category: CAT_RING_TOP, mask: 0xFFFFFFFF, group: ringGroupId }
+            : { category: CAT_RING_OTHER, mask: 0xFFFFFFFF & ~CAT_PEG, group: ringGroupId };
 
-        const partWidth = Math.tan(Math.PI / partCount) * radius * 2.2;
-        const partX = x + Math.cos(angle) * (radius - thickness / 2);
+        const partWidth = Math.tan(Math.PI / partCount) * radius * 2.1;
+        const partX = spawnX + Math.cos(angle) * (radius - thickness / 2);
         const partY = y + Math.sin(angle) * (radius - thickness / 2);
 
         const part = Matter.Bodies.rectangle(partX, partY, thickness, partWidth, {
             angle: angle,
-            collisionFilter: filter
+            collisionFilter: filter,
+            friction: 0.01,
+            restitution: 0.3
         });
 
         parts.push(part);
     }
 
-    // Create center sensor body for goal detection
-    const sensor = Matter.Bodies.circle(x, y, 15, {
+    const sensor = Matter.Bodies.circle(spawnX, y, 15, {
         isSensor: true,
         label: 'ring_sensor',
-        collisionFilter: { mask: 0 }
+        collisionFilter: { mask: 0, group: ringGroupId }
     });
     parts.push(sensor);
 
-    // Create the composite body
     const ringBody = Matter.Body.create({
         parts: parts,
-        frictionAir: 0.05,
-        restitution: 0.5,
-        density: 0.005,
+        frictionAir: 0.04,
+        restitution: 0.3,
+        density: 0.003, // Lighter for better separation
         label: 'ring',
         render: { fillStyle: color, sprite: { xScale: 1, yScale: 1 } }
     });
 
-    // Store original color and state
     ringBody.plugin = { color, isPegged: false };
 
     Matter.World.add(world, ringBody);

@@ -59,7 +59,8 @@ export const GameEngine = forwardRef<GameEngineRef, GameEngineProps>(({ isPlay, 
     });
     const [bubbles, setBubbles] = useState<Bubble[]>([]);
 
-    const sensorData = useSensor();
+    const { x, y } = useSensor();
+    const sensorData = { x, y };
 
     // Bubble emitter function exposed to parent
     useImperativeHandle(ref, () => ({

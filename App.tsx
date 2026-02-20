@@ -1,7 +1,7 @@
 import { useAudioPlayer } from 'expo-audio';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, ImageBackground, StatusBar, StyleSheet, Text, View } from 'react-native';
+import { Alert, ImageBackground, Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import {
     FRAME_COLOR,
     FRAME_HIGHLIGHT,
@@ -15,14 +15,17 @@ import {
 } from './constants/layout';
 import { Controls } from './src/components/Controls';
 import { GameEngine, GameEngineRef } from './src/components/GameEngine';
+import { useSensor } from './src/hooks/useSensor';
 import { rings } from './src/physics';
 
 const RING_COLORS = ['#FF595E', '#FFCA3A', '#8AC926', '#1982C4', '#6A4C93'];
 
 export default function App() {
-    const [isPlay, setIsPlay] = useState(true);
+    const [isPlay, setIsPlay] = useState(false); // Start with false to show start button
     const [successCount, setSuccessCount] = useState(0);
     const gameEngineRef = useRef<GameEngineRef>(null);
+    const { requestPermission, permissionGranted } = useSensor();
+    const [needsStart, setNeedsStart] = useState(true);
 
     // Audio players
     const bubblePlayer = useAudioPlayer(require('./assets/sounds/Hit.wav'));
@@ -30,12 +33,14 @@ export default function App() {
     const bgmPlayer = useAudioPlayer(require('./assets/sounds/bgm.mp3'));
 
     useEffect(() => {
-        if (bgmPlayer) {
+        if (bgmPlayer && isPlay) {
             bgmPlayer.loop = true;
             bgmPlayer.volume = 0.3;
             bgmPlayer.play();
+        } else if (bgmPlayer && !isPlay) {
+            bgmPlayer.pause();
         }
-    }, [bgmPlayer]);
+    }, [bgmPlayer, isPlay]);
 
     const playBubbleSound = async (x: number, y: number) => {
         if (gameEngineRef.current) {
@@ -85,6 +90,17 @@ export default function App() {
     const handleRestart = () => {
         setSuccessCount(0);
         setIsPlay(true);
+        setNeedsStart(false);
+    };
+
+    const handleStart = async () => {
+        await requestPermission();
+        setIsPlay(true);
+        setNeedsStart(false);
+        // Also play a sound to unlock audio on web
+        if (bubblePlayer) {
+            bubblePlayer.play();
+        }
     };
 
     return (
@@ -124,6 +140,34 @@ export default function App() {
                                     onSuccess={() => { }}
                                     ringColors={RING_COLORS}
                                 />
+
+                                {needsStart && (
+                                    <View style={styles.startOverlay}>
+                                        <LinearGradient
+                                            colors={['rgba(0,0,0,0.8)', 'rgba(0,30,60,0.9)']}
+                                            style={styles.startGradient}
+                                        >
+                                            <Text style={styles.startTitle}>WATER WIZARD</Text>
+                                            <Text style={styles.startSub}>Classic Ring Toss</Text>
+
+                                            <View style={styles.startButtonContainer}>
+                                                <Pressable
+                                                    style={({ pressed }) => [
+                                                        styles.startBtn,
+                                                        { backgroundColor: '#8AC926', opacity: pressed ? 0.8 : 1, transform: [{ scale: pressed ? 0.96 : 1 }] }
+                                                    ]}
+                                                    onPress={handleStart}
+                                                >
+                                                    <Text style={styles.startBtnText}>START GAME</Text>
+                                                </Pressable>
+                                            </View>
+
+                                            <Text style={styles.startHint}>
+                                                {Platform.OS === 'web' ? 'Motion sensor will be requested' : 'Tilt your device to move rings'}
+                                            </Text>
+                                        </LinearGradient>
+                                    </View>
+                                )}
 
                                 {/* Polished Score Badge */}
                                 <View style={styles.hud}>
@@ -301,5 +345,62 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(0, 0, 0, 0.2)',
         borderRadius: 2,
         marginTop: 6,
+    },
+    startOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    startGradient: {
+        width: '100%',
+        height: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    startTitle: {
+        color: '#fff',
+        fontSize: 32,
+        fontWeight: '900',
+        letterSpacing: 4,
+        textShadowColor: 'rgba(0, 255, 255, 0.5)',
+        textShadowOffset: { width: 0, height: 0 },
+        textShadowRadius: 10,
+    },
+    startSub: {
+        color: 'rgba(255, 255, 255, 0.5)',
+        fontSize: 14,
+        letterSpacing: 2,
+        marginBottom: 40,
+    },
+    startButtonContainer: {
+        padding: 10,
+        borderRadius: 20,
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.2)',
+    },
+    startBtn: {
+        paddingHorizontal: 30,
+        paddingVertical: 15,
+        borderRadius: 12,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 8,
+    },
+    startBtnText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: 'bold',
+        letterSpacing: 1,
+    },
+    startHint: {
+        color: 'rgba(255, 255, 255, 0.4)',
+        fontSize: 12,
+        marginTop: 30,
+        textAlign: 'center',
     }
 });
